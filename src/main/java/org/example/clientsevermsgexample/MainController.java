@@ -36,7 +36,10 @@ public class MainController implements Initializable {
                 "71",     // finger
                 "80",     // http
                 "119",     // nntp (news)
-                "161"      // snmp);
+                "161",      // snmp);
+                "6666"
+
+
         );
     }
 
@@ -124,40 +127,19 @@ public class MainController implements Initializable {
 
     private void runServer() {
         try {
-
             ServerSocket serverSocket = new ServerSocket(6666);
             updateServer("Server is running and waiting for a client...");
-            while (true) { // Infinite loop
+
+            while (true) {
                 try {
                     Socket clientSocket = serverSocket.accept();
                     updateServer("Client connected!");
 
-                    new Thread(() -> {
-                        try {
-                            sleep(3000);
-                        } catch (InterruptedException e) {
-                            throw new RuntimeException(e);
-                        }
-                    });
-                    DataInputStream dis = new DataInputStream(clientSocket.getInputStream());
-                    DataOutputStream dos = new DataOutputStream(clientSocket.getOutputStream());
-
-                    message = dis.readUTF();
-                    updateServer("Message from client: " + message);
-
-                    // Sending a response back to the client
-                    dos.writeUTF("Received: " + message);
-
-                    dis.close();
-                    dos.close();
+                    new Thread(() -> handleClient(clientSocket)).start();
 
                 } catch (IOException e) {
                     updateServer("Error: " + e.getMessage());
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
                 }
-                if (message.equalsIgnoreCase("exit")) break;
-
             }
         } catch (IOException e) {
             updateServer("Error: " + e.getMessage());
@@ -165,10 +147,10 @@ public class MainController implements Initializable {
     }
 
     private void updateServer(String message) {
-        // Run on the UI thread
-        javafx.application.Platform.runLater(() -> lb12.setText(message + "\n"));
+        javafx.application.Platform.runLater(() -> {
+            lb12.setText(lb12.getText() + message + "\n");
+        });
     }
-
 
     @FXML
     void startClient(ActionEvent event) {
@@ -198,36 +180,71 @@ public class MainController implements Initializable {
         stage.setTitle("Client");
         stage.show();
 
+        Button sendButton = new Button("Send");
+        sendButton.setLayoutX(250);
+        sendButton.setLayoutY(150);
+        sendButton.setOnAction(e -> {
+            if (socket1 == null) {
+                updateTextClient("Not connected to server!");
+                return;
+            }
+
+            try {
+                DataOutputStream dos = new DataOutputStream(socket1.getOutputStream());
+                dos.writeUTF(msgText.getText());
+            } catch (IOException ex) {
+                updateTextClient("Error sending message: " + ex.getMessage());
+            }
+        });
+
+        root.getChildren().add(sendButton);
+
+
 
     }
 
-
     private void connectToServer(ActionEvent event) {
-
-
         try {
             socket1 = new Socket("localhost", 6666);
 
             DataOutputStream dos = new DataOutputStream(socket1.getOutputStream());
-            DataInputStream dis = new DataInputStream(socket1.getInputStream());
-
             dos.writeUTF(msgText.getText());
-            String response = dis.readUTF();
-            updateTextClient("Server response: " + response + "\n");
 
-            dis.close();
-            dos.close();
-            socket1.close();
+            // Listen for messages in background
+            new Thread(() -> {
+                try {
+                    DataInputStream dis = new DataInputStream(socket1.getInputStream());
+                    while (true) {
+                        String response = dis.readUTF();
+                        updateTextClient("Server: " + response);
+                    }
+                } catch (IOException e) {
+                    updateTextClient("Connection closed.");
+                }
+            }).start();
+
         } catch (Exception e) {
-            updateTextClient("Error: " + e.getMessage() + "\n");
+            updateTextClient("Error: " + e.getMessage());
         }
-
-
     }
 
+
     private void updateTextClient(String message) {
-        // Run on the UI thread
         javafx.application.Platform.runLater(() -> lb122.setText(message + "\n"));
+    }
+    private void handleClient(Socket clientSocket) {
+        try {
+            DataInputStream dis = new DataInputStream(clientSocket.getInputStream());
+            DataOutputStream dos = new DataOutputStream(clientSocket.getOutputStream());
+
+            String msg;
+            while ((msg = dis.readUTF()) != null) {
+                updateServer("Client: " + msg);
+                dos.writeUTF("Echo: " + msg);
+            }
+        } catch (IOException e) {
+            updateServer("Client disconnected.");
+        }
     }
 
 }
